@@ -7,9 +7,10 @@
 const { MUNICIPALITIES, zonesAt } = window.ParkMunicipalities;
 const { evaluateZone, isFreeNow, zoneClass } = window.ParkRules;
 
-let map, zonesLayer, facLayer, stripsLayer, youMarker, selectedMarker, canvasRenderer, stripsRenderer;
+let map, zonesLayer, facLayer, stripsLayer, meterLayer, youMarker, selectedMarker, canvasRenderer, stripsRenderer;
 let features = [];            // zonas combinadas (CPH + FRB)
-let facilities = [];          // instalaciones de aparcamiento (OSM)
+let facilities = [];          // instalaciones de aparcamiento (OSM + garajes oficiales)
+let meters = [];              // parquímetros (parkomat)
 let stripsCache = [];         // calles de pago cargadas (parkering_areal)
 let stripsLoadedBounds = null;
 let queryDate = new Date();
@@ -132,12 +133,58 @@ function renderFacilities() {
     const m = garage
       ? L.marker([la, lo], { icon: garageIcon() })
       : L.circleMarker([la, lo], { renderer: canvasRenderer, radius: c === 'pay' ? 6.5 : 5, color: '#fff', weight: 1.5, fillColor: FAC_COLOR[c], fillOpacity: 0.95 });
-    m.on('click', ev => { L.DomEvent.stopPropagation(ev); showFacility(f, [la, lo]); });
+    // Los garajes son marcadores DOM (detienen la propagación); los dots canvas
+    // se gestionan vía el clic del mapa (pickNearbyPoint).
+    if (garage) m.on('click', ev => { L.DomEvent.stopPropagation(ev); showFacility(f, [la, lo]); });
     facLayer.addLayer(m);
   }
   facLayer.addTo(map);
 }
 function garageIcon() { return L.divIcon({ className: 'gar', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] }); }
+
+// ---------------------------------------------------- Parquímetros (parkomat)
+const METER_ZOOM = 16; // muy denso: solo al acercar bastante
+async function loadMeters() {
+  try { const r = await fetch('data/parkomat.json'); meters = (await r.json()).features || []; }
+  catch (_) { meters = []; }
+  renderMeters();
+}
+function renderMeters() {
+  if (meterLayer) { meterLayer.remove(); meterLayer = null; }
+  if (!facOn || !map || map.getZoom() < METER_ZOOM) return;
+  if (!(activeFilter === 'all' || activeFilter === 'pay')) return;
+  meterLayer = L.layerGroup();
+  for (const m of meters) {
+    const [lo, la] = m.geometry.coordinates;
+    const mk = L.circleMarker([la, lo], {
+      renderer: canvasRenderer, radius: 4,
+      color: m.properties.broken ? '#e4572e' : '#f0a500', weight: 2, fillColor: '#1b1f24', fillOpacity: 1,
+    });
+    meterLayer.addLayer(mk); // clic gestionado por el mapa (pickNearbyPoint)
+  }
+  meterLayer.addTo(map);
+}
+function showMeter(m) {
+  lastPoint = null; lastStrip = null;
+  const p = m.properties, [lo, la] = m.geometry.coordinates;
+  if (selectedMarker) selectedMarker.remove();
+  selectedMarker = L.marker([la, lo], { icon: pinIcon() }).addTo(map);
+  const rows = [];
+  if (p.zone) rows.push(['Zona', `${p.zone}`]);
+  if (p.street) rows.push(['Ubicación', p.street]);
+  rows.push(['Estado', p.broken ? 'Fuera de servicio' : 'En servicio']);
+  const h = `<div class="r-top"><span class="lv lv-pay">Pago</span><span class="r-muni">Parquímetro</span></div>
+    <h2 class="r-title">Parquímetro${p.street ? ` · ${p.street}` : ''}</h2>
+    <p class="r-now">Punto físico para pagar el aparcamiento en la calle</p>
+    <div class="facrows">${rows.map(r => `<div class="facrow"><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join('')}</div>
+    <div class="pay">
+      <a class="pay-btn" href="https://www.google.com/maps/dir/?api=1&destination=${la},${lo}" target="_blank" rel="noopener">Cómo llegar</a>
+      <a class="pay-btn ghost" href="https://www.easypark.com/da-dk" target="_blank" rel="noopener">O pagar por app</a>
+    </div>
+    <p class="r-detail">También puedes pagar desde la app (EasyPark) sin ir al parquímetro. Datos: Københavns Kommune.</p>`;
+  document.getElementById('sheet-body').innerHTML = h;
+  openSheet();
+}
 
 // ---------------------------------------------------- Calles de pago (parkering_areal)
 // Estilo APCOA/EasyPark: al hacer zoom se cargan por bbox las franjas reales de
@@ -155,7 +202,8 @@ async function loadStrips() {
   // y deje barrios sin calles en pantallas anchas o vistas grandes.
   const b = cur.pad(0.12);
   const bbox = `${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()},urn:ogc:def:crs:EPSG::4326`;
-  const url = `https://wfs-kbhkort.kk.dk/k101/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=k101:parkering_areal&srsName=EPSG:4326&outputFormat=application/json&count=15000&bbox=${bbox}`;
+  // p_pladser (líneas) trae además el texto exacto de restricción y el club de coche compartido.
+  const url = `https://wfs-kbhkort.kk.dk/k101/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=k101:p_pladser&srsName=EPSG:4326&outputFormat=application/json&count=15000&bbox=${bbox}`;
   try {
     const r = await fetch(url);
     const gj = await r.json();
@@ -175,13 +223,16 @@ function renderStrips() {
     onEachFeature: (f, layer) => layer.on('click', ev => { L.DomEvent.stopPropagation(ev); showStrip(f); }),
   }).addTo(map);
 }
-// Centroide aproximado de una franja (primer anillo del primer polígono).
+// Punto medio de una franja (soporta líneas y polígonos).
 function stripCenter(f) {
-  let ring = f.geometry.coordinates[0];
-  if (f.geometry.type === 'MultiPolygon') ring = f.geometry.coordinates[0][0];
-  let sx = 0, sy = 0;
-  ring.forEach(p => { sx += p[0]; sy += p[1]; });
-  return [sy / ring.length, sx / ring.length]; // [lat, lng]
+  const g = f.geometry;
+  let line;
+  if (g.type === 'MultiLineString') line = g.coordinates[0];
+  else if (g.type === 'LineString') line = g.coordinates;
+  else if (g.type === 'MultiPolygon') line = g.coordinates[0][0];
+  else line = g.coordinates[0];
+  const mid = line[Math.floor(line.length / 2)];
+  return [mid[1], mid[0]]; // [lat, lng]
 }
 function showStrip(f) {
   lastStrip = f; lastPoint = null;
@@ -201,8 +252,11 @@ function showStrip(f) {
       sourceUrl: 'https://www.kk.dk/parkering', detail: 'Plazas con uso específico. Consulta la señalización de la calle.' };
   }
   res.status = street;
-  const meta = [p.p_ordning, p.antal_p_pladser != null ? `${p.antal_p_pladser} plazas` : null, p.bydel].filter(Boolean).join(' · ');
-  res.detail = `${meta}.${res.detail ? ' ' + res.detail : ''}`;
+  const meta = [p.p_ordning, p.antal_pladser != null ? `${p.antal_pladser} plazas` : null, p.bydel].filter(Boolean).join(' · ');
+  const extras = [];
+  if (p.restriktionstekst) extras.push(`Restricción (señal): ${p.restriktionstekst}`);
+  if (p.delebilsklub) extras.push(`Coche compartido: ${p.delebilsklub}`);
+  res.detail = `${meta}.${extras.length ? ' ' + extras.join('. ') + '.' : ''}${res.detail ? ' ' + res.detail : ''}`;
   renderPanel([res], nearestPayFacility(ll[0], ll[1]));
 }
 
@@ -225,7 +279,41 @@ function nearestPayFacility(lat, lng, maxM = 1500) {
 }
 function fmtDist(m) { return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`; }
 
+// Punto visible (parquímetro/parking/garaje) más cercano al clic, en píxeles.
+// Los marcadores en canvas no capturan el clic de forma fiable (lo intercepta la
+// zona), así que damos prioridad aquí: parquímetro > parking/garaje > zona.
+function pickNearbyPoint(lat, lng) {
+  if (!facOn) return null;
+  const z = map.getZoom();
+  const clickPt = map.latLngToContainerPoint([lat, lng]);
+  const pxDist = (la, lo) => map.latLngToContainerPoint([la, lo]).distanceTo(clickPt);
+  const TOL = 15;
+  // Parquímetros (solo si visibles).
+  if (z >= METER_ZOOM && (activeFilter === 'all' || activeFilter === 'pay')) {
+    let bm = null, bd = TOL;
+    for (const m of meters) { const [lo, la] = m.geometry.coordinates; const d = pxDist(la, lo); if (d < bd) { bd = d; bm = m; } }
+    if (bm) return { type: 'meter', m: bm };
+  }
+  // Parkings y garajes (según zoom/filtro de visibilidad).
+  if (z >= 14) {
+    const showAll = z >= 15;
+    let bf = null, bd = TOL;
+    for (const f of facilities) {
+      const c = f.properties.cls, garage = f.properties.kind === 'garage';
+      if (!(garage || c === 'pay' || c === 'free' || showAll)) continue;
+      if (!facVisibleByFilter(c)) continue;
+      const [lo, la] = f.geometry.coordinates; const d = pxDist(la, lo);
+      if (d < bd) { bd = d; bf = { f, latlng: [la, lo] }; }
+    }
+    if (bf) return { type: 'facility', f: bf.f, latlng: bf.latlng };
+  }
+  return null;
+}
+
 function showAt(lat, lng) {
+  // Prioridad a un marcador cercano (canvas) antes que la zona.
+  const near = pickNearbyPoint(lat, lng);
+  if (near) { near.type === 'meter' ? showMeter(near.m) : showFacility(near.f, near.latlng); return; }
   lastPoint = [lat, lng]; lastStrip = null;
   const hits = zonesAt(features, lng, lat);
   if (selectedMarker) selectedMarker.remove();
@@ -445,7 +533,7 @@ function initFilters() {
   document.querySelectorAll('.chip[data-f]').forEach(c => c.addEventListener('click', () => {
     document.querySelectorAll('.chip[data-f]').forEach(x => x.classList.remove('on'));
     c.classList.add('on'); activeFilter = c.dataset.f;
-    renderZones(); renderFacilities(); renderStrips();
+    renderZones(); renderFacilities(); renderStrips(); renderMeters();
   }));
 }
 function initDateTime() {
@@ -467,7 +555,7 @@ function initSearch() {
 function initFacToggle() {
   const btn = document.getElementById('fac-btn');
   btn.classList.toggle('on', facOn);
-  btn.addEventListener('click', () => { facOn = !facOn; btn.classList.toggle('on', facOn); renderFacilities(); });
+  btn.addEventListener('click', () => { facOn = !facOn; btn.classList.toggle('on', facOn); renderFacilities(); renderMeters(); });
 }
 
 function init() {
@@ -483,14 +571,14 @@ function init() {
   }).addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   map.on('click', e => showAt(e.latlng.lat, e.latlng.lng));
-  map.on('zoomend', renderFacilities);
+  map.on('zoomend', () => { renderFacilities(); renderMeters(); });
   map.on('moveend', loadStrips);
 
   document.getElementById('locate-btn').addEventListener('click', locateMe);
   document.getElementById('sheet-close').addEventListener('click', closeSheet);
 
   initDateTime(); initFilters(); initSearch(); initFacToggle();
-  loadZones(); loadFacilities();
+  loadZones(); loadFacilities(); loadMeters();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }

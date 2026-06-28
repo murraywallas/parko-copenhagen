@@ -1,6 +1,6 @@
 // sw.js — Service worker: cachea el shell de la app y el respaldo de zonas
 // para que funcione sin conexión (las teselas del mapa requieren red).
-const CACHE = 'parkkbh-v8';
+const CACHE = 'parkkbh-v9';
 const SHELL = [
   'index.html',
   'css/styles.css',
@@ -10,6 +10,7 @@ const SHELL = [
   'data/zones-cph.json',
   'data/zones-frb.json',
   'data/parking-facilities.json',
+  'data/parkomat.json',
   'icons/icon.svg',
   'manifest.webmanifest',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
