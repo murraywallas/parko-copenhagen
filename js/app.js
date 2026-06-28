@@ -124,18 +124,20 @@ function renderFacilities() {
   facLayer = L.layerGroup();
   for (const f of facilities) {
     const c = f.properties.cls;
-    if (!(c === 'pay' || c === 'free' || showAll)) continue;
+    const garage = f.properties.kind === 'garage';
+    if (!(garage || c === 'pay' || c === 'free' || showAll)) continue;
     if (!facVisibleByFilter(c)) continue;
     const [lo, la] = f.geometry.coordinates;
-    const m = L.circleMarker([la, lo], {
-      renderer: canvasRenderer, radius: c === 'pay' ? 6.5 : 5,
-      color: '#fff', weight: 1.5, fillColor: FAC_COLOR[c], fillOpacity: 0.95,
-    });
+    // Garajes oficiales (p_hus): marcador cuadrado "P" para distinguirlos.
+    const m = garage
+      ? L.marker([la, lo], { icon: garageIcon() })
+      : L.circleMarker([la, lo], { renderer: canvasRenderer, radius: c === 'pay' ? 6.5 : 5, color: '#fff', weight: 1.5, fillColor: FAC_COLOR[c], fillOpacity: 0.95 });
     m.on('click', ev => { L.DomEvent.stopPropagation(ev); showFacility(f, [la, lo]); });
     facLayer.addLayer(m);
   }
   facLayer.addTo(map);
 }
+function garageIcon() { return L.divIcon({ className: 'gar', html: 'P', iconSize: [22, 22], iconAnchor: [11, 11] }); }
 
 // ---------------------------------------------------- Calles de pago (parkering_areal)
 // Estilo APCOA/EasyPark: al hacer zoom se cargan por bbox las franjas reales de
@@ -323,24 +325,32 @@ function showFacility(f, latlng) {
   if (selectedMarker) selectedMarker.remove();
   selectedMarker = L.marker(latlng, { icon: pinIcon() }).addTo(map);
   const p = f.properties;
+  const garage = p.kind === 'garage';
   const badge = p.cls === 'pay' ? 'lv-pay' : p.cls === 'free' ? 'lv-free' : 'lv-info';
   const rows = [];
-  if (p.ptype) rows.push(['Tipo', PTYPE[p.ptype] || p.ptype]);
+  if (garage) rows.push(['Tipo', p.typeLabel || 'Garaje']);
+  else if (p.ptype) rows.push(['Tipo', PTYPE[p.ptype] || p.ptype]);
   if (p.access) rows.push(['Acceso', ({ yes: 'Público', customers: 'Clientes', permit: 'Con permiso', private: 'Privado', no: 'Restringido' })[p.access] || p.access]);
   if (p.capacity) rows.push(['Plazas', String(p.capacity)]);
   if (p.operator && p.operator !== facilityName(p)) rows.push(['Operador', p.operator]);
+  if (garage && p.owner) rows.push(['Titularidad', p.owner === 'Kommune' ? 'Municipal' : p.owner === 'Privat' ? 'Privada' : p.owner]);
   if (p.charge) rows.push(['Tarifa', p.charge]);
   if (p.maxstay) rows.push(['Tiempo máx.', p.maxstay]);
 
-  let h = `<div class="r-top"><span class="lv ${badge}">${FAC_LABEL[p.cls]}</span><span class="r-muni">Parking</span></div>
+  let h = `<div class="r-top">
+      <span class="lv ${badge}">${FAC_LABEL[p.cls]}</span>
+      <span class="r-muni">${garage ? 'Garaje oficial' : 'Parking'}</span>
+    </div>
     <h2 class="r-title">${facilityName(p)}</h2>
-    <p class="r-now">${p.cls === 'pay' ? 'Aparcamiento de pago (fuera de la calle)' : p.cls === 'free' ? 'Aparcamiento gratuito' : 'Sin datos de tarifa en OSM'}</p>`;
+    <p class="r-now">${garage ? 'Garaje de pago (P-hus / sótano)' : p.cls === 'pay' ? 'Aparcamiento de pago (fuera de la calle)' : p.cls === 'free' ? 'Aparcamiento gratuito' : 'Sin datos de tarifa en OSM'}</p>`;
   if (rows.length) h += `<div class="facrows">${rows.map(r => `<div class="facrow"><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join('')}</div>`;
   h += `<div class="pay">
       <a class="pay-btn" href="https://www.google.com/maps/dir/?api=1&destination=${latlng[0]},${latlng[1]}" target="_blank" rel="noopener">Cómo llegar</a>
       ${p.cls === 'pay' ? `<a class="pay-btn ghost" href="https://www.easypark.com/da-dk" target="_blank" rel="noopener">Pagar con EasyPark</a>` : ''}
     </div>
-    <p class="r-detail">Datos de instalación de OpenStreetMap; la tarifa exacta puede variar, confírmala en el sitio.</p>`;
+    <p class="r-detail">${garage
+      ? 'Garaje del registro oficial de Københavns Kommune. La tarifa la fija el operador; confírmala en el sitio.'
+      : 'Datos de instalación de OpenStreetMap; la tarifa exacta puede variar, confírmala en el sitio.'}</p>`;
   document.getElementById('sheet-body').innerHTML = h;
   openSheet();
 }

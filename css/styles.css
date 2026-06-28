@@ -46,6 +46,14 @@ body {
 }
 .leaflet-bottom.leaflet-right { margin-bottom: 4px; }
 
+/* Marcador de garaje oficial (p_hus): cuadrado "P" */
+.gar {
+  display: grid; place-items: center; width: 22px; height: 22px;
+  background: #f0a500; color: #2a1c00; font-weight: 800; font-size: 14px;
+  border: 2px solid #fff; border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+
 /* Pin de selección (gota) */
 .pin-sel svg { filter: drop-shadow(0 4px 6px rgba(0,0,0,.4)); }
 

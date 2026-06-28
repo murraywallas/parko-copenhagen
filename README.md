@@ -58,7 +58,8 @@ Netlify, Vercel).
 | Tarifas Copenhague | [kk.dk - Priser og parkeringszoner](https://www.kk.dk/borger/parkering-trafik-og-veje/parkering/priser-og-parkeringszoner) (2026) |
 | Zona Frederiksberg | [Open Data DK - Parkeringszone](https://www.opendata.dk/city-of-frederiksberg/parkeringszone) (Shapefile, convertido a GeoJSON WGS84 y empaquetado) |
 | Tarifas Frederiksberg | [frederiksberg.dk - Parkering](https://www.frederiksberg.dk/by-bolig-og-miljoe/trafik/parkering) (2026) |
-| Parkings off-street | OpenStreetMap (`amenity=parking`, vía Overpass) - 5.127 instalaciones empaquetadas |
+| Garajes oficiales | Open Data DK / KK WFS (`k101:p_hus`) - 31 garajes con nombre, plazas, tipo y operador verificados |
+| Parkings off-street | OpenStreetMap (`amenity=parking`, vía Overpass) - ~5.100 instalaciones (dedup. con los garajes oficiales) |
 | Calles de pago | Open Data DK / KK WFS (`k101:parkering_areal`, 20.285 franjas, carga por bbox) |
 | Búsqueda de direcciones | Nominatim (OpenStreetMap) |
 | Mapa base | CARTO Positron + OpenStreetMap |
