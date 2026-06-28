@@ -54,6 +54,75 @@ function pordColor(po) {
   return '#9aa3ad';
 }
 
+// ---------------------------------------------------- Traducción (danés → español)
+// Esquemas de aparcamiento (p_ordning).
+const ORDNING_ES = {
+  'Rød betalingszone': 'Zona de pago roja', 'Grøn betalingszone': 'Zona de pago verde',
+  'Blå betalingszone': 'Zona de pago azul', 'Gul betalingszone': 'Zona de pago amarilla',
+  '3 timers restriktion': 'Restricción de 3 horas', 'Delebil parkering': 'Coche compartido',
+  'Handicap parkering': 'Aparcamiento PMR', 'Besøgsplads': 'Plaza de visitantes',
+  'Elbil-plads med ladestandere': 'Coche eléctrico (con cargador)',
+  'Elbil-plads uden ladestandere': 'Coche eléctrico (sin cargador)',
+  'El-delebil-plads med ladestandere': 'Coche eléctrico compartido (con cargador)',
+  'El-delebil-plads uden ladestandere': 'Coche eléctrico compartido (sin cargador)',
+  'Motorcykel parkering': 'Aparcamiento de motos', 'Taxiholdeplads': 'Parada de taxi',
+  'El-taxiholdeplads': 'Parada de taxi eléctrico', 'Ambassade parkering': 'Aparcamiento de embajada',
+  'Turistbus plads': 'Plaza de autobús turístico', 'Off. reguleret, privat grund': 'Regulado público (suelo privado)',
+  'Privat ordning, privat fællesvej': 'Régimen privado (calle privada)',
+  'Privat ordning, diverse': 'Régimen privado (varios)',
+  'Handicap parkering, privat ordning, privat fællesvej': 'Aparcamiento PMR (privado)',
+  'Besøgsplads, privat ordning, privat fællesvej': 'Plaza de visitantes (privado)',
+};
+function ordningES(po) { return ORDNING_ES[po] || po || ''; }
+const ZONE_ES = { 'Rød': 'Roja', 'Grøn': 'Verde', 'Blå': 'Azul', 'Gul': 'Amarilla' };
+
+// Traduce el texto libre de restricción de la señal (restriktionstekst).
+function translateRestriction(t) {
+  if (!t) return t;
+  let s = ' ' + t.replace(/\s+/g, ' ').trim() + ' ';
+  const PH = [
+    [/Reserveret til erhvervsk[øoæ]ret[øo]jer p[åa] gul+e? nummerplader(s|er)?/gi, 'reservado a vehículos comerciales con matrícula amarilla'],
+    [/Reserveret erhvervsk[øoæ]ret[øo]jer p[åa] gule nummerplader/gi, 'reservado a vehículos comerciales con matrícula amarilla'],
+    [/ud- og indstigning tilladt/gi, 'permitido subir y bajar pasajeros'],
+    [/af- og p[åa]l[æae]?sning tilladt/gi, 'permitido cargar y descargar'],
+    [/Varelevering og bogbus undtaget/gi, 'reparto y bibliobús exceptuados'],
+    [/Kun opladning af elk[øo]ret[øo]jer/gi, 'solo recarga de vehículos eléctricos'],
+    [/Kun k[øo]ret[øo]jer med politiets godkendelse/gi, 'solo vehículos autorizados por la policía'],
+    [/reserveret til Politiets k[øo]ret[øo]jer/gi, 'reservado a vehículos de la policía'],
+    [/kun lastbiler til K[øo]dbyen/gi, 'solo camiones a Kødbyen'],
+    [/Forbeholdt lastbiler/gi, 'reservado a camiones'],
+    [/Forbeholdt turistbusser/gi, 'reservado a buses turísticos'],
+    [/Forbeholdt busser/gi, 'reservado a buses'],
+    [/Standsnings?\s?for+bud/gi, 'prohibido detenerse'],
+    [/Parkeringsforbud/gi, 'prohibido aparcar'],
+    [/P-?forbud/gi, 'prohibido aparcar'],
+    [/P-betalingszone/gi, 'zona de pago'],
+    [/[øo]vrige? tid/gi, 'resto del tiempo'],
+    [/bus undtaget/gi, 'bus exceptuado'],
+    [/juli undtaget/gi, 'julio exceptuado'],
+    [/Cykel-P/gi, 'aparcamiento de bicis'],
+    [/(\w+)-\s*og\s*(\w+)-licens undtaget/gi, 'excepto licencia $1 y $2'],
+    [/(\w+)-licens undtaget/gi, 'excepto licencia $1'],
+    [/Beboerlicens (\w+) undtaget/gi, 'excepto licencia de residente $1'],
+    [/alle dage/gi, 'todos los días'],
+    [/hverdage/gi, 'días laborables'],
+    [/Mandag-fredag/gi, 'lunes a viernes'], [/mandag-fredag/gi, 'lunes a viernes'], [/Man-fre/gi, 'lun-vie'],
+    [/Mandag/gi, 'lunes'], [/Tirsdag/gi, 'martes'], [/Onsdag/gi, 'miércoles'], [/Torsdag/gi, 'jueves'],
+    [/Fredag/gi, 'viernes'], [/L[øo]rdag/gi, 'sábado'], [/S[øo]ndag/gi, 'domingo'], [/s[øo]ndag/gi, 'domingo'],
+  ];
+  PH.forEach(([re, es]) => { s = s.replace(re, es); });
+  [['januar', 'enero'], ['februar', 'febrero'], ['marts', 'marzo'], ['april', 'abril'], ['maj', 'mayo'],
+   ['juni', 'junio'], ['juli', 'julio'], ['august', 'agosto'], ['september', 'septiembre'], ['oktober', 'octubre'],
+   ['november', 'noviembre'], ['december', 'diciembre']].forEach(([da, es]) => { s = s.replace(new RegExp(da, 'gi'), es); });
+  s = s.replace(/(\d+)\s*timer/gi, '$1 horas').replace(/(\d+)\s*time\b/gi, '$1 hora');
+  s = s.replace(/\bmin\.?/gi, 'min').replace(/\bog\b/gi, 'y');
+  s = s.replace(/\bpladser\b/gi, 'plazas').replace(/\bplads\b/gi, 'plaza');
+  s = s.replace(/\bLastbil\b/g, 'Camión').replace(/\blastbiler\b/gi, 'camiones');
+  s = s.replace(/\btilladt\b/gi, 'permitido').replace(/\bundtaget\b/gi, 'exceptuado');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 // ---------------------------------------------------- Carga de zonas
 async function fetchMunicipality(m) {
   const tag = fc => (fc.features || []).map(f => {
@@ -170,7 +239,7 @@ function showMeter(m) {
   if (selectedMarker) selectedMarker.remove();
   selectedMarker = L.marker([la, lo], { icon: pinIcon() }).addTo(map);
   const rows = [];
-  if (p.zone) rows.push(['Zona', `${p.zone}`]);
+  if (p.zone) rows.push(['Zona', ZONE_ES[p.zone] || p.zone]);
   if (p.street) rows.push(['Ubicación', p.street]);
   rows.push(['Estado', p.broken ? 'Fuera de servicio' : 'En servicio']);
   const h = `<div class="r-top"><span class="lv lv-pay">Pago</span><span class="r-muni">Parquímetro</span></div>
@@ -247,9 +316,9 @@ function stripResult(f) {
       sourceUrl: 'https://www.kk.dk/parkering', detail: 'Plazas con uso específico. Consulta la señalización de la calle.' };
   }
   res.status = street;
-  const meta = [p.p_ordning, p.antal_pladser != null ? `${p.antal_pladser} plazas` : null, p.bydel].filter(Boolean).join(' · ');
+  const meta = [ordningES(p.p_ordning), p.antal_pladser != null ? `${p.antal_pladser} plazas` : null, p.bydel].filter(Boolean).join(' · ');
   const extras = [];
-  if (p.restriktionstekst) extras.push(`Restricción (señal): ${p.restriktionstekst}`);
+  if (p.restriktionstekst) extras.push(`Restricción (señal): ${translateRestriction(p.restriktionstekst)}`);
   if (p.delebilsklub) extras.push(`Coche compartido: ${p.delebilsklub}`);
   res.detail = `${meta}.${extras.length ? ' ' + extras.join('. ') + '.' : ''}${res.detail ? ' ' + res.detail : ''}`;
   return res;
