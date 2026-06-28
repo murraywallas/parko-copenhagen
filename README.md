@@ -62,7 +62,7 @@ Netlify, Vercel).
 | Parkings off-street | OpenStreetMap (`amenity=parking`, vía Overpass) - ~5.100 instalaciones (dedup. con los garajes oficiales) |
 | Calles de pago | Open Data DK / KK WFS (`k101:p_pladser`, líneas con nombre, zona, plazas y **texto de restricción** exacto; carga por bbox) |
 | Parquímetros | Open Data DK / KK WFS (`k101:parkomat`, 1.602 puntos con zona y estado) |
-| Búsqueda de direcciones | Nominatim (OpenStreetMap) |
+| Búsqueda/autocompletar | DAWA (Danmarks Adressers Web API, oficial DK; filtrada a Copenhague + Frederiksberg) |
 | Mapa base | CARTO Positron + OpenStreetMap |
 
 ## Arquitectura

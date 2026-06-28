@@ -234,13 +234,8 @@ function stripCenter(f) {
   const mid = line[Math.floor(line.length / 2)];
   return [mid[1], mid[0]]; // [lat, lng]
 }
-function showStrip(f) {
-  lastStrip = f; lastPoint = null;
+function stripResult(f) {
   const p = f.properties;
-  const ll = stripCenter(f);
-  if (selectedMarker) selectedMarker.remove();
-  selectedMarker = L.marker(ll, { icon: pinIcon() }).addTo(map);
-
   const street = `${p.vejnavn || 'Calle'}${p.vejside ? ` · ${p.vejside.toLowerCase()}` : ''}`;
   let res;
   if (PORD_NAVN[p.p_ordning]) {
@@ -257,7 +252,20 @@ function showStrip(f) {
   if (p.restriktionstekst) extras.push(`Restricción (señal): ${p.restriktionstekst}`);
   if (p.delebilsklub) extras.push(`Coche compartido: ${p.delebilsklub}`);
   res.detail = `${meta}.${extras.length ? ' ' + extras.join('. ') + '.' : ''}${res.detail ? ' ' + res.detail : ''}`;
-  renderPanel([res], nearestPayFacility(ll[0], ll[1]));
+  return res;
+}
+// Muestra una calle anclando el "parking cercano" en anchorLL; nota opcional.
+function presentStrip(f, anchorLL, note) {
+  lastStrip = f; lastPoint = null;
+  const res = stripResult(f);
+  if (note) res.detail = `${note} ${res.detail}`;
+  renderPanel([res], nearestPayFacility(anchorLL[0], anchorLL[1]));
+}
+function showStrip(f) {
+  const ll = stripCenter(f);
+  if (selectedMarker) selectedMarker.remove();
+  selectedMarker = L.marker(ll, { icon: pinIcon() }).addTo(map);
+  presentStrip(f, ll);
 }
 
 // ---------------------------------------------------- Consulta de un punto
@@ -278,6 +286,21 @@ function nearestPayFacility(lat, lng, maxM = 1500) {
   return best && best.d <= maxM ? best : null;
 }
 function fmtDist(m) { return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`; }
+// Calle de aparcamiento más cercana al punto (mín. distancia a cualquier vértice).
+function nearestStrip(lat, lng, maxM) {
+  let best = null, bd = Infinity;
+  for (const f of stripsCache) {
+    const g = f.geometry;
+    const lines = g.type === 'MultiLineString' ? g.coordinates
+      : g.type === 'LineString' ? [g.coordinates]
+      : g.type === 'MultiPolygon' ? g.coordinates.map(p => p[0]) : [g.coordinates[0]];
+    for (const line of lines) for (const pt of line) {
+      const d = haversine(lat, lng, pt[1], pt[0]);
+      if (d < bd) { bd = d; best = f; }
+    }
+  }
+  return best && bd <= maxM ? { feature: best, d: bd } : null;
+}
 
 // Punto visible (parquímetro/parking/garaje) más cercano al clic, en píxeles.
 // Los marcadores en canvas no capturan el clic de forma fiable (lo intercepta la
@@ -321,8 +344,12 @@ function showAt(lat, lng) {
 
   let results;
   if (!hits.length) {
+    // El punto suele caer sobre el edificio (retirado de la calzada): describe la
+    // calle de aparcamiento inmediatamente enfrente, si la hay cerca.
+    const ns = nearestStrip(lat, lng, 35);
+    if (ns) { presentStrip(ns.feature, [lat, lng], 'Calle más cercana a tu punto.'); return; }
     results = [{ level: 'info', muniLabel: '', status: 'Sin zona regulada en la calle',
-      nowText: '', detail: 'No hay zona de la calle del dataset aquí. Mira los parkings de pago marcados o la señal de la calle.',
+      nowText: '', detail: 'No hay zona ni calle de pago del dataset cerca de este punto. Respeta la señal de la calle.',
       sourceUrl: 'https://www.kk.dk/parkering', when: queryDate, durationH }];
   } else {
     const seen = new Set();
@@ -510,20 +537,30 @@ function locateMe() {
   { enableHighAccuracy: true, timeout: 8000 });
 }
 
-// ---------------------------------------------------- Búsqueda por dirección
+// ---------------------------------------------------- Búsqueda por dirección (DAWA)
+const DAWA = 'https://api.dataforsyningen.dk/adgangsadresser/autocomplete';
+const DAWA_KOMMUNER = '0101|0147'; // København + Frederiksberg
+
 async function searchAddress(q) {
   if (!q.trim()) return;
   setStatus('Buscando dirección…');
   try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=dk&viewbox=12.40,55.75,12.70,55.58&bounded=1&q=${encodeURIComponent(q)}`;
-    const r = await fetch(url, { headers: { 'Accept-Language': 'da,es,en' } });
-    const j = await r.json();
+    const d = await (await fetch(`${DAWA}?q=${encodeURIComponent(q)}&per_side=1&srid=4326&kommunekode=${DAWA_KOMMUNER}`)).json();
     setStatus(`${features.length} zonas · CPH + Frederiksberg`);
-    if (!j.length) { setStatus('Dirección no encontrada'); return; }
-    const lat = +j[0].lat, lng = +j[0].lon;
-    map.setView([lat, lng], 16);
-    showAt(lat, lng);
+    if (!d.length) { setStatus('Dirección no encontrada'); return; }
+    goToAddress(d[0].adgangsadresse.y, d[0].adgangsadresse.x, d[0].tekst);
   } catch (_) { setStatus('Error en la búsqueda'); }
+}
+// Centra en la dirección, marca el punto y describe la CALLE de aparcamiento en frente.
+async function goToAddress(lat, lng, label) {
+  map.setView([lat, lng], 16, { animate: false }); // sin animar: bounds correctos para loadStrips
+  if (selectedMarker) selectedMarker.remove();
+  selectedMarker = L.marker([lat, lng], { icon: pinIcon() }).addTo(map);
+  await loadStrips();          // asegura que las calles del área estén cargadas
+  renderFacilities(); renderMeters();
+  const ns = nearestStrip(lat, lng, 90);
+  if (ns) presentStrip(ns.feature, [lat, lng], `Enfrente de ${(label || '').split(',')[0]}:`);
+  else showAt(lat, lng);
 }
 
 function setStatus(t) { document.getElementById('status').textContent = t; }
@@ -548,9 +585,63 @@ function initDateTime() {
     if (activeFilter === 'free') renderZones(); recompute();
   });
 }
+// ---------------------------------------------------- Autocompletar (DAWA)
+let suggestItems = [], activeIdx = -1, suggestTimer = null;
+function hideSuggest() {
+  const box = document.getElementById('suggest');
+  box.classList.remove('show'); box.innerHTML = ''; suggestItems = []; activeIdx = -1;
+}
+async function fetchSuggest(q) {
+  try {
+    const d = await (await fetch(`${DAWA}?q=${encodeURIComponent(q)}&per_side=6&srid=4326&kommunekode=${DAWA_KOMMUNER}`)).json();
+    suggestItems = (d || []).map(x => ({ text: x.tekst, lat: x.adgangsadresse.y, lng: x.adgangsadresse.x }));
+    renderSuggest();
+  } catch (_) { hideSuggest(); }
+}
+function renderSuggest() {
+  const box = document.getElementById('suggest');
+  if (!suggestItems.length) { hideSuggest(); return; }
+  activeIdx = -1;
+  box.innerHTML = suggestItems.map((it, i) => {
+    const parts = it.text.split(',');
+    return `<li data-i="${i}" role="option"><strong>${parts[0]}</strong><small>${parts.slice(1).join(',').trim()}</small></li>`;
+  }).join('');
+  box.classList.add('show');
+  box.querySelectorAll('li').forEach(li => li.addEventListener('mousedown', e => {
+    e.preventDefault(); pickSuggest(suggestItems[+li.dataset.i]);
+  }));
+}
+function setActive(i) {
+  activeIdx = i;
+  document.querySelectorAll('#suggest li').forEach((li, k) => li.classList.toggle('active', k === i));
+}
+function pickSuggest(it) {
+  document.getElementById('search').value = it.text;
+  hideSuggest();
+  goToAddress(it.lat, it.lng, it.text);
+}
 function initSearch() {
   const form = document.getElementById('search-form'), input = document.getElementById('search');
-  form.addEventListener('submit', e => { e.preventDefault(); searchAddress(input.value); input.blur(); });
+  input.addEventListener('input', () => {
+    clearTimeout(suggestTimer);
+    const q = input.value.trim();
+    if (q.length < 2) { hideSuggest(); return; }
+    suggestTimer = setTimeout(() => fetchSuggest(q), 220);
+  });
+  input.addEventListener('keydown', e => {
+    const box = document.getElementById('suggest');
+    if (!box.classList.contains('show')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIdx + 1, suggestItems.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(Math.max(activeIdx - 1, 0)); }
+    else if (e.key === 'Escape') { hideSuggest(); }
+  });
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (suggestItems.length) pickSuggest(suggestItems[activeIdx >= 0 ? activeIdx : 0]);
+    else searchAddress(input.value);
+    input.blur();
+  });
+  input.addEventListener('blur', () => setTimeout(hideSuggest, 150));
 }
 function initFacToggle() {
   const btn = document.getElementById('fac-btn');
