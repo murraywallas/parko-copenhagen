@@ -1,0 +1,14 @@
+{
+  "name": "Parko · Aparcar en Copenhague y Frederiksberg",
+  "short_name": "Parko",
+  "description": "Restricciones, precio y dónde pagar el aparcamiento en Copenhague según el día y la hora.",
+  "start_url": "index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111418",
+  "theme_color": "#111418",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
