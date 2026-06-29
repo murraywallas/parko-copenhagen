@@ -24,7 +24,9 @@ const STRIP_ZOOM = 15;        // a partir de aquí se muestran las calles
 // ---------------------------------------------------- Colores
 function zoneColor(props) {
   if (props.municipality === 'frb') return '#d6457d';
-  if (props.municipality === 'vejle') return /beboer|zonekort/i.test(props.note || '') ? '#8c5bd6' : '#2f8fb0';
+  if (props.municipality === 'vejle') return ({
+    pay: '#b3324f', timed: '#d6a700', free: '#2e9e5b', resident: '#8c5bd6', permit: '#e08a1e',
+  })[props.vtype] || '#2f8fb0';
   const k = props.kategori || '';
   if (k === 'Betalingszone') return ({
     'Rød': '#e4572e', 'Grøn': '#2e9e5b', 'Blå': '#3a78d6', 'Gul': '#d6a700', 'Orange': '#e8821e',
@@ -620,6 +622,11 @@ const DAWA_KOMMUNER = '0101|0147|0751|0630'; // København, Frederiksberg, Aarhu
 
 async function searchAddress(q) {
   if (!q.trim()) return;
+  // ¿Nombre de ciudad? Salta directo (Aarhus, Vejle, Copenhague, Frederiksberg).
+  const ql = q.trim().toLowerCase();
+  const city = MUNICIPALITIES.find(m => m.label.toLowerCase() === ql || m.name.toLowerCase() === ql
+    || (ql === 'copenhague' && m.id === 'cph') || (ql === 'copenhagen' && m.id === 'cph'));
+  if (city) { flyToCity(city); return; }
   setStatus('Buscando dirección…');
   try {
     const d = await (await fetch(`${DAWA}?q=${encodeURIComponent(q)}&per_side=1&srid=4326&kommunekode=${DAWA_KOMMUNER}`)).json();
@@ -668,18 +675,29 @@ function hideSuggest() {
   const box = document.getElementById('suggest');
   box.classList.remove('show'); box.innerHTML = ''; suggestItems = []; activeIdx = -1;
 }
+function cityMatches(q) {
+  const ql = q.toLowerCase();
+  return MUNICIPALITIES.filter(m => {
+    const names = [m.label.toLowerCase(), m.name.toLowerCase()];
+    if (m.id === 'cph') names.push('copenhague', 'copenhagen');
+    return names.some(n => n.startsWith(ql));
+  }).map(m => ({ text: m.label, sub: 'Ciudad', isCity: true, city: m }));
+}
 async function fetchSuggest(q) {
+  const cities = cityMatches(q);
   try {
     const d = await (await fetch(`${DAWA}?q=${encodeURIComponent(q)}&per_side=6&srid=4326&kommunekode=${DAWA_KOMMUNER}`)).json();
-    suggestItems = (d || []).map(x => ({ text: x.tekst, lat: x.adgangsadresse.y, lng: x.adgangsadresse.x }));
+    const addr = (d || []).map(x => ({ text: x.tekst, lat: x.adgangsadresse.y, lng: x.adgangsadresse.x }));
+    suggestItems = [...cities, ...addr];
     renderSuggest();
-  } catch (_) { hideSuggest(); }
+  } catch (_) { suggestItems = cities; cities.length ? renderSuggest() : hideSuggest(); }
 }
 function renderSuggest() {
   const box = document.getElementById('suggest');
   if (!suggestItems.length) { hideSuggest(); return; }
   activeIdx = -1;
   box.innerHTML = suggestItems.map((it, i) => {
+    if (it.isCity) return `<li data-i="${i}" role="option" class="sg-city"><strong>${it.text}</strong><small>Ciudad · ir al mapa</small></li>`;
     const parts = it.text.split(',');
     return `<li data-i="${i}" role="option"><strong>${parts[0]}</strong><small>${parts.slice(1).join(',').trim()}</small></li>`;
   }).join('');
@@ -695,7 +713,8 @@ function setActive(i) {
 function pickSuggest(it) {
   document.getElementById('search').value = it.text;
   hideSuggest();
-  goToAddress(it.lat, it.lng, it.text);
+  if (it.isCity) flyToCity(it.city);
+  else goToAddress(it.lat, it.lng, it.text);
 }
 function initSearch() {
   const form = document.getElementById('search-form'), input = document.getElementById('search');
@@ -725,17 +744,12 @@ function initFacToggle() {
   btn.classList.toggle('on', facOn);
   btn.addEventListener('click', () => { facOn = !facOn; btn.classList.toggle('on', facOn); renderFacilities(); renderMeters(); });
 }
-function flyToCity(id) {
-  const m = MUNICIPALITIES.find(x => x.id === id); if (!m) return;
+// Salta el mapa a una ciudad (usado cuando el usuario busca su nombre).
+function flyToCity(m) {
   map.setView(m.center, m.zoom);
   document.getElementById('sheet').classList.remove('open');
-  setStatus(`${m.label} · acerca el mapa para ver calles y plazas`);
-}
-function initCities() {
-  document.querySelectorAll('.city[data-city]').forEach(b => b.addEventListener('click', () => {
-    document.querySelectorAll('.city').forEach(x => x.classList.remove('on'));
-    b.classList.add('on'); flyToCity(b.dataset.city);
-  }));
+  setStatus(`${m.label} · acerca el mapa para ver zonas y plazas`);
+  loadStrips(); renderFacilities(); renderMeters();
 }
 
 function init() {
@@ -756,7 +770,7 @@ function init() {
   document.getElementById('locate-btn').addEventListener('click', locateMe);
   document.getElementById('sheet-close').addEventListener('click', closeSheet);
 
-  initDateTime(); initFilters(); initSearch(); initFacToggle(); initCities();
+  initDateTime(); initFilters(); initSearch(); initFacToggle();
   loadZones(); loadFacilities(); loadMeters();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

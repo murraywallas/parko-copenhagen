@@ -106,6 +106,13 @@ function vejlePeriodeES(periode) {
     .replace(/Hverdage/gi, 'Laborables').replace(/L[øo]rdag/gi, 'Sábado')
     .replace(/S[øo]n\/?Helligdage/gi, 'Dom/festivos').replace(/S[øo]ndag/gi, 'Domingo');
 }
+// Traduce el límite de tiempo (KATEGORI) de Vejle: "Max 2 timer 7-17" -> "Máx 2 h, 7-17".
+function vejleLimitES(k) {
+  if (!k) return '';
+  if (/Uden tidsbegr/i.test(k)) return 'sin límite';
+  return k.replace(/Max\s*/i, 'Máx ').replace(/(\d+)\s*timer?/gi, '$1 h')
+    .replace(/Reserveret/i, 'Reservado').replace(/min\b/gi, 'min').trim();
+}
 
 // ¿Se cobra (en general) en este instante? Genérico para mensajes.
 function isPaidAt(muni, navn, date) {
@@ -294,26 +301,31 @@ function evaluateZone(feature, opts = {}) {
 
   // --- Vejle: por plaza (cada plaza trae su horario) ---
   if (muni === 'vejle') {
-    const periode = p.periode;
-    const parsed = vejleParse(periode);
-    const resident = /beboer|zonekort/i.test(p.note || '');
-    const name = p.sted || 'Aparcamiento';
-    const spaces = p.spaces;
-    let level, nowText;
-    if (resident && !parsed) { level = 'license'; nowText = 'Reservado a residentes/zona'; }
-    else if (parsed && parsed.unlimited) { level = 'free'; nowText = 'Sin límite de tiempo'; }
-    else if (!periode) { level = 'info'; nowText = 'Consulta la señal'; }
-    else {
-      const paidNow = vejlePaidNow(periode, when);
+    const vt = p.vtype, name = p.sted || 'Aparcamiento', spaces = p.spaces;
+    const limitES = vejleLimitES(p.limit);
+    const sp = spaces ? `${spaces} plazas` : null;
+    let level, nowText, detail;
+    if (vt === 'resident') {
+      level = 'license'; nowText = 'Reservado a residentes (Beboerkort)';
+      detail = [sp, 'Necesitas licencia/zonekort de residente. Sin ella, busca una zona de pago o libre.'].filter(Boolean).join('. ');
+    } else if (vt === 'permit') {
+      level = 'restricted'; nowText = 'Requiere permiso en horario diurno';
+      detail = [sp, 'Permiso necesario de día; sigue la señalización.'].filter(Boolean).join('. ');
+    } else if (vt === 'pay') {
+      const paidNow = vejlePaidNow(p.periode, when);
       level = paidNow ? 'pay' : 'free';
-      nowText = paidNow ? 'De pago ahora' : 'Gratis ahora';
+      nowText = paidNow ? 'De pago ahora · ~9 kr/h' : 'Gratis ahora';
+      detail = [p.periode ? `Pago: ${vejlePeriodeES(p.periode)}` : null, sp,
+        'Tarifa ~9 kr/h (máx 3 h); fuera de ese horario, domingos y festivos es gratis. Confirma en el automat.'].filter(Boolean).join('. ');
+    } else if (vt === 'timed') {
+      level = 'free';
+      nowText = limitES ? `Gratis · ${limitES}` : 'Gratis con límite de tiempo';
+      detail = [limitES ? `Límite: ${limitES}` : null, sp,
+        'Gratis pero con tiempo máximo; registra/usa disco si la señal lo pide.'].filter(Boolean).join('. ');
+    } else { // free
+      level = 'free'; nowText = 'Gratis · sin límite';
+      detail = [sp, 'Aparcamiento gratuito sin límite de tiempo.'].filter(Boolean).join('. ');
     }
-    const detail = [
-      periode ? `Horario: ${vejlePeriodeES(periode)}` : null,
-      spaces ? `${spaces} plazas` : null,
-      resident ? `(${(p.note || '').trim()})` : null,
-      'En Vejle: zonas de pago ~9 kr/h (máx 3 h); verde gratis y amarilla 2 h gratis. Confirma en la señal o el automat.',
-    ].filter(Boolean).join('. ');
     return { ...base, level, status: name, nowText, detail };
   }
 
@@ -390,7 +402,11 @@ function isFreeNow(feature, when = new Date()) {
   const core = (p.kategori || '').replace(/^Kommende\s*/i, '').replace(/^Tidligere\s*/i, '');
   if (muni === 'frb') return !frbIsPaidHour(when);
   if (muni === 'aar') return AAR_TARIFFS[p.navn] ? !aarIsPaidHour(when, p.navn) : false;
-  if (muni === 'vejle') return !vejlePaidNow(p.periode, when);
+  if (muni === 'vejle') {
+    if (p.vtype === 'resident' || p.vtype === 'permit') return false;
+    if (p.vtype === 'pay') return !vejlePaidNow(p.periode, when);
+    return true; // free / timed: gratis ahora
+  }
   if (/Uden for betalingszone/i.test(core)) return true;
   if (core === 'Betalingszone') return cphFirstHourFree(when);
   return false; // residentes / restricción no son "gratis para cualquiera"
@@ -399,7 +415,11 @@ function isFreeNow(feature, when = new Date()) {
 // Clasificación para el filtro de UX.
 function zoneClass(feature) {
   const p = feature.properties || {};
-  if (p.municipality === 'vejle') return /beboer|zonekort/i.test(p.note || '') ? 'license' : 'pay';
+  if (p.municipality === 'vejle') {
+    const vt = p.vtype;
+    return vt === 'resident' ? 'license' : vt === 'pay' ? 'pay'
+      : (vt === 'timed' || vt === 'permit') ? 'restricted' : 'free';
+  }
   const core = (p.kategori || '').replace(/^Kommende\s*/i, '').replace(/^Tidligere\s*/i, '');
   if (core === 'Betalingszone') return 'pay';
   if (core === 'Beboerzone' || core === 'Adressebeboerzone' || core === 'Flexzone') return 'license';

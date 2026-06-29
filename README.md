@@ -27,8 +27,10 @@ datos **oficiales y abiertos**.
   esquema. Toca una calle para ver su **nombre**, zona, nº de plazas, barrio y el
   precio para tu hora/duración. Se cargan por área visible desde el WFS oficial.
 - **Cuatro ciudades**: Copenhague y Frederiksberg (datos completos), más **Aarhus**
-  (zonas Rød/Gul/Grøn/Blå/Orange con tarifas reales) y **Vejle** (plazas municipales
-  con su horario). Selector de ciudad arriba; la búsqueda cubre las cuatro.
+  (zonas Rød/Gul/Grøn/Blå/Orange con tarifas reales) y **Vejle** (áreas P-zoner
+  clasificadas: gratis / con límite / de pago / residentes). El buscador navega a
+  cualquier dirección **o ciudad** (escribe "Aarhus" y salta allí) — los datos cargan
+  para las cuatro a la vez.
 - **Filtros** de zona: Todas · Gratis ahora · De pago · Residentes · Restricción.
 - Maneja zonas **solapadas** (deduplicadas) en el mismo punto.
 - **Funciona offline** (PWA instalable con respaldo de datos local).
@@ -62,7 +64,7 @@ Netlify, Vercel).
 | Zona Frederiksberg | [Open Data DK - Parkeringszone](https://www.opendata.dk/city-of-frederiksberg/parkeringszone) (Shapefile, convertido a GeoJSON WGS84 y empaquetado) |
 | Tarifas Frederiksberg | [frederiksberg.dk - Parkering](https://www.frederiksberg.dk/by-bolig-og-miljoe/trafik/parkering) (2026) |
 | Zonas Aarhus | Open Data Aarhus (`betalingsparkering`, reproyectado a WGS84) + tarifas aarhus.dk 2026 (25/11/16 kr/h, dom gratis) |
-| Plazas Vejle | Open Data Vejle (ArcGIS `parkeringspladser`, horario por plaza) + tarifas vejle.dk |
+| Zonas Vejle | Open Data Vejle (ArcGIS `P-zoner`, capa 3): tipo por `AFGIFTSTYP`/`KATEGORI` (gratis/límite/pago/residentes) + tarifas vejle.dk |
 | Garajes oficiales | Open Data DK / KK WFS (`k101:p_hus`) - 31 garajes con nombre, plazas, tipo y operador verificados |
 | Parkings off-street | OpenStreetMap (`amenity=parking`, vía Overpass) - ~5.100 instalaciones (dedup. con los garajes oficiales) |
 | Calles de pago | Open Data DK / KK WFS (`k101:p_pladser`, líneas con nombre, zona, plazas y **texto de restricción** exacto; carga por bbox) |

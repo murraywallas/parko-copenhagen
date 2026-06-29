@@ -119,18 +119,6 @@ body {
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .chip.solid { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 
-/* Selector de ciudad */
-.rowCity { display: flex; gap: 7px; margin-bottom: 10px; }
-.city {
-  flex: 1; cursor: pointer; white-space: nowrap;
-  background: rgba(255,255,255,.06); color: var(--text);
-  border: 1px solid var(--stroke); border-radius: var(--r-pill);
-  padding: 8px 6px; font-size: 13px; font-weight: 600; font-family: inherit;
-  transition: background .2s var(--ease), transform .12s var(--ease);
-}
-.city:active { transform: scale(0.96); }
-.city.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-
 /* Buscador */
 .rowS { position: relative; display: flex; align-items: center; margin-bottom: 10px; }
 .rowS .s-ic { position: absolute; left: 13px; color: var(--muted); pointer-events: none; }
@@ -155,6 +143,7 @@ body {
 .suggest li strong { font-weight: 600; font-size: 14px; }
 .suggest li small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
 .suggest li:hover, .suggest li.active { background: rgba(255,255,255,.09); }
+.suggest li.sg-city strong { color: var(--accent); }
 
 /* ---------------- FABs ---------------- */
 .fabs { position: fixed; right: 14px; bottom: calc(120px + var(--safe-b)); z-index: 1100;
