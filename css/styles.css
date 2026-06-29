@@ -236,6 +236,7 @@ body {
   font-weight: 700; font-size: 14px; transition: transform .12s var(--ease); }
 .pay-btn:active { transform: translateY(1px) scale(0.99); }
 .pay-btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--stroke-2); }
+.pay-hint { margin: 9px 0 0; font-size: 12px; color: var(--muted); line-height: 1.4; }
 
 /* Parking de pago cercano */
 .near { display: flex; align-items: center; gap: 12px; width: 100%; margin: 14px 0 0; cursor: pointer;

@@ -476,6 +476,7 @@ function renderPanel(results, nearPay) {
   if (main.payProviders && (main.level === 'pay' || main.level === 'free') && main.total != null) {
     h += `<div class="pay">${main.payProviders.map((p, i) =>
       `<a class="pay-btn ${i ? 'ghost' : ''}" href="${p.url}" target="_blank" rel="noopener">${p.name}</a>`).join('')}</div>`;
+    h += `<p class="pay-hint">El código de zona va en la señal o el parquímetro. Al abrir EasyPark/APCOA, la app detecta tu zona por GPS.</p>`;
   }
 
   // Parking de pago más cercano (off-street).
@@ -542,6 +543,7 @@ function showFacility(f, latlng) {
       <a class="pay-btn" href="https://www.google.com/maps/dir/?api=1&destination=${latlng[0]},${latlng[1]}" target="_blank" rel="noopener">Cómo llegar</a>
       ${p.cls === 'pay' ? `<a class="pay-btn ghost" href="https://www.easypark.com/da-dk" target="_blank" rel="noopener">Pagar con EasyPark</a>` : ''}
     </div>
+    ${(p.cls === 'pay' || garage) ? '<p class="pay-hint">El código va en la señal/automat; la app (EasyPark/APCOA) detecta tu zona por GPS.</p>' : ''}
     <p class="r-detail">${garage
       ? 'Garaje del registro oficial de Københavns Kommune. La tarifa la fija el operador; confírmala en el sitio.'
       : 'Datos de instalación de OpenStreetMap; la tarifa exacta puede variar, confírmala en el sitio.'}</p>`;

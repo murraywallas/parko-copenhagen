@@ -1,6 +1,6 @@
 // sw.js — Service worker: cachea el shell de la app y el respaldo de zonas
 // para que funcione sin conexión (las teselas del mapa requieren red).
-const CACHE = 'parkkbh-v13';
+const CACHE = 'parkkbh-v14';
 const SHELL = [
   'index.html',
   'css/styles.css',
