@@ -1,6 +1,6 @@
 // sw.js — Service worker: cachea el shell de la app y el respaldo de zonas
 // para que funcione sin conexión (las teselas del mapa requieren red).
-const CACHE = 'parkkbh-v11';
+const CACHE = 'parkkbh-v12';
 const SHELL = [
   'index.html',
   'css/styles.css',
@@ -9,7 +9,11 @@ const SHELL = [
   'js/app.js',
   'data/zones-cph.json',
   'data/zones-frb.json',
+  'data/zones-aarhus.json',
+  'data/zones-vejle.json',
   'data/parking-facilities.json',
+  'data/facilities-aarhus.json',
+  'data/facilities-vejle.json',
   'data/parkomat.json',
   'icons/icon.svg',
   'manifest.webmanifest',

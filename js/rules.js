@@ -54,6 +54,67 @@ function frbIsPaidHour(date) {
   return h >= 7;                          // lun–vie 07–24
 }
 
+// ------------------------------------------------------------------- Aarhus
+// Tarifa por zona y franja (automat oficial). Domingos/festivos gratis.
+// Gul: 2 h gratis con registro. Grøn: tarde gratis. Blå/Orange: según señal.
+const AAR_TARIFFS = {
+  'Rød':  { day: 25, evening: 11 },
+  'Gul':  { day: 25, evening: 11 },
+  'Grøn': { day: 16, evening: 0 },
+};
+function aarBand(date) {
+  if (isDanishHoliday(date)) return 'free';
+  const day = date.getDay(), h = date.getHours();
+  if (day === 0) return 'free';                                  // domingo
+  if (day === 6) return h >= 8 && h < 16 ? 'day' : (h >= 16 && h < 23 ? 'evening' : 'free'); // sábado
+  return h >= 8 && h < 19 ? 'day' : (h >= 19 && h < 23 ? 'evening' : 'free');                // lun-vie
+}
+function aarHourlyPrice(navn, date) {
+  const t = AAR_TARIFFS[navn]; if (!t) return null;              // Blå/Orange desconocido
+  const b = aarBand(date); return b === 'free' ? 0 : (t[b] ?? 0);
+}
+function aarIsPaidHour(date, navn) {
+  const t = AAR_TARIFFS[navn]; if (!t) return false;
+  return (aarHourlyPrice(navn, date) ?? 0) > 0;
+}
+
+// --------------------------------------------------------------------- Vejle
+// Datos por plaza (Open Data Vejle): cada plaza trae su horario de pago (periode).
+// Precio no viene fiable por plaza; tarifa de ciudad: ~9 kr/h (máx 3 h) en zona de pago.
+function vejleParse(periode) {
+  if (!periode) return null;
+  if (/Uden tidsbegr/i.test(periode)) return { unlimited: true };
+  const r = {}; let m;
+  if ((m = periode.match(/Hverdage:\s*(\d{1,2})-(\d{1,2})/i))) r.wd = [+m[1], +m[2]];
+  if ((m = periode.match(/L[øo]rdag:\s*(\d{1,2})-(\d{1,2})/i))) r.sat = [+m[1], +m[2]];
+  if ((m = periode.match(/S[øo]n[^:]*:\s*(\d{1,2})-(\d{1,2})/i))) r.sun = [+m[1], +m[2]];
+  return r;
+}
+function vejlePaidNow(periode, date) {
+  const r = vejleParse(periode);
+  if (!r || r.unlimited) return false;
+  const day = date.getDay(), h = date.getHours();
+  const range = day === 0 ? r.sun : day === 6 ? r.sat : r.wd;
+  if (isDanishHoliday(date) && !r.sun) return false;
+  if (!range) return false;
+  return h >= range[0] && h < range[1];
+}
+function vejlePeriodeES(periode) {
+  if (!periode) return '';
+  return periode
+    .replace(/Uden tidsbegr[æae]nsning/gi, 'Sin límite de tiempo')
+    .replace(/Hverdage/gi, 'Laborables').replace(/L[øo]rdag/gi, 'Sábado')
+    .replace(/S[øo]n\/?Helligdage/gi, 'Dom/festivos').replace(/S[øo]ndag/gi, 'Domingo');
+}
+
+// ¿Se cobra (en general) en este instante? Genérico para mensajes.
+function isPaidAt(muni, navn, date) {
+  if (muni === 'frb') return frbIsPaidHour(date);
+  if (muni === 'aar') return aarIsPaidHour(date, navn);
+  if (muni === 'cph') return true; // 24/7 (1ª hora gratis aparte)
+  return false;
+}
+
 // ---------------------------------------------------------------- Festivos DK
 function easterSunday(year) {
   const a = year % 19, b = Math.floor(year / 100), c = year % 100;
@@ -97,11 +158,10 @@ function cphFirstHourFree(date) {
 }
 
 // Próximo instante en que el aparcamiento pasa a ser gratis (para mensajes).
-function nextFreeTime(muni, from) {
+function nextFreeTime(muni, from, navn) {
   for (let i = 0; i < 24 * 8; i++) {
     const t = new Date(from.getTime() + i * HOUR);
-    const paid = muni === 'frb' ? frbIsPaidHour(t) : true; // CPH cobra 24/7
-    if (!paid) return t;
+    if (!isPaidAt(muni, navn, t)) return t;
   }
   return null;
 }
@@ -120,30 +180,41 @@ const PAY = {
     { name: 'EasyPark', url: 'https://www.easypark.com/da-dk' },
     { name: 'OK / Oparko / APCOA', url: 'https://www.frederiksberg.dk/by-bolig-og-miljoe/trafik/parkering' },
   ],
+  aar: [
+    { name: 'EasyPark', url: 'https://www.easypark.com/da-dk' },
+    { name: 'OK / ParkMan / ParkPark', url: 'https://aarhus.dk/borger/trafik-og-parkering/parkering/parkering-i-aarhus/priser-og-betaling' },
+  ],
+  vejle: [
+    { name: 'EasyPark', url: 'https://www.easypark.com/da-dk' },
+    { name: 'Info Vejle', url: 'https://www.vejle.dk/da/service-og-selvbetjening/borger/trafik-og-parkering/parkering-og-tilladelser/priser-og-betaling-for-parkering/hvad-koster-det-at-parkere/' },
+  ],
 };
 const SOURCE = {
   cph: 'https://www.kk.dk/borger/parkering-trafik-og-veje/parkering/priser-og-parkeringszoner',
   frb: 'https://www.frederiksberg.dk/by-bolig-og-miljoe/trafik/parkering',
+  aar: 'https://aarhus.dk/borger/trafik-og-parkering/parkering/parkering-i-aarhus/priser-og-betaling',
+  vejle: 'https://www.vejle.dk/da/service-og-selvbetjening/borger/trafik-og-parkering/parkering-og-tilladelser/priser-og-betaling-for-parkering/hvad-koster-det-at-parkere/',
 };
-const MUNI_LABEL = { cph: 'Copenhague', frb: 'Frederiksberg' };
+const MUNI_LABEL = { cph: 'Copenhague', frb: 'Frederiksberg', aar: 'Aarhus', vejle: 'Vejle' };
 
 // ----------------------------------------------------------- Cálculo de coste
 // Devuelve { total, breakdown:[{hour,price,free}], freeHours, paidHours, capped }
 function computeCost(muni, navn, start, durationH) {
   let total = 0, paid = 0, freeHours = 0;
+  let aarFreeBudget = (muni === 'aar' && navn === 'Gul') ? 2 : 0; // 2 h gratis zona amarilla
   const breakdown = [];
   for (let i = 0; i < durationH; i++) {
     const slot = new Date(start.getTime() + i * HOUR);
     if (muni === 'frb') {
       if (frbIsPaidHour(slot)) {
-        paid++;
-        const price = frbSchedulePrice(paid);
-        total += price;
+        paid++; const price = frbSchedulePrice(paid); total += price;
         breakdown.push({ hour: i + 1, price, free: false });
-      } else {
-        freeHours++;
-        breakdown.push({ hour: i + 1, price: 0, free: true });
-      }
+      } else { freeHours++; breakdown.push({ hour: i + 1, price: 0, free: true }); }
+    } else if (muni === 'aar') {
+      const price = aarHourlyPrice(navn, slot);
+      if (price > 0 && aarFreeBudget > 0) { aarFreeBudget--; freeHours++; breakdown.push({ hour: i + 1, price: 0, free: true }); }
+      else if (price > 0) { paid++; total += price; breakdown.push({ hour: i + 1, price, free: false }); }
+      else { freeHours++; breakdown.push({ hour: i + 1, price: 0, free: true }); }
     } else { // cph
       const free = i === 0 && cphFirstHourFree(start);
       if (free) { freeHours++; breakdown.push({ hour: i + 1, price: 0, free: true }); }
@@ -191,6 +262,59 @@ function evaluateZone(feature, opts = {}) {
       breakdown: cost.breakdown, capped: cost.capped,
       detail: 'Precio progresivo por hora: 1ª h 10, 2ª 15, 3ª 21, 4ª 26, 5ª-6ª 27 kr (máx. 130 kr/día). Debes registrar la matrícula desde el inicio.',
     };
+  }
+
+  // --- Aarhus: zonas de pago por color ---
+  if (muni === 'aar') {
+    const navn = base.navn;
+    if (!AAR_TARIFFS[navn]) { // Blå / Orange: según señal
+      return { ...base, level: 'info', status: `Zona ${navn}`, nowText: 'Tarifa según señal',
+        detail: `Zona ${navn} de Aarhus. Consulta el horario y la tarifa en la señal o el automat.` };
+    }
+    const paidNow = aarIsPaidHour(when, navn);
+    const cost = computeCost('aar', navn, when, durationH);
+    const free2 = navn === 'Gul';
+    let nowText;
+    if (!paidNow) {
+      const resumes = nextPaidTime('aar', when, navn);
+      nowText = resumes ? `Gratis ahora · cobro desde ${fmtDayTime(resumes)}` : 'Gratis ahora';
+    } else if (free2) nowText = `2 h gratis (con registro), luego ${AAR_TARIFFS.Gul.day} kr/h`;
+    else nowText = `De pago ahora · ${aarHourlyPrice(navn, when)} kr/h`;
+    const detail = navn === 'Grøn'
+      ? 'Zona verde: 16 kr/h laborables 8-19 y sáb 8-16; tardes, domingos y festivos gratis.'
+      : navn === 'Gul'
+      ? 'Zona amarilla: 2 h gratis con registro, luego 25 kr/h (día) / 11 kr/h (tarde 19-23). Domingos y festivos gratis.'
+      : 'Zona roja: 25 kr/h (día 8-19) / 11 kr/h (tarde 19-23), sáb hasta 23. Domingos y festivos gratis.';
+    return {
+      ...base, level: (!paidNow || free2) ? 'free' : 'pay',
+      status: `Zona de pago ${navn}`, scheme: 'porhora', nowText,
+      total: cost.total, totalText: `${cost.total} kr`, breakdown: cost.breakdown, detail,
+    };
+  }
+
+  // --- Vejle: por plaza (cada plaza trae su horario) ---
+  if (muni === 'vejle') {
+    const periode = p.periode;
+    const parsed = vejleParse(periode);
+    const resident = /beboer|zonekort/i.test(p.note || '');
+    const name = p.sted || 'Aparcamiento';
+    const spaces = p.spaces;
+    let level, nowText;
+    if (resident && !parsed) { level = 'license'; nowText = 'Reservado a residentes/zona'; }
+    else if (parsed && parsed.unlimited) { level = 'free'; nowText = 'Sin límite de tiempo'; }
+    else if (!periode) { level = 'info'; nowText = 'Consulta la señal'; }
+    else {
+      const paidNow = vejlePaidNow(periode, when);
+      level = paidNow ? 'pay' : 'free';
+      nowText = paidNow ? 'De pago ahora' : 'Gratis ahora';
+    }
+    const detail = [
+      periode ? `Horario: ${vejlePeriodeES(periode)}` : null,
+      spaces ? `${spaces} plazas` : null,
+      resident ? `(${(p.note || '').trim()})` : null,
+      'En Vejle: zonas de pago ~9 kr/h (máx 3 h); verde gratis y amarilla 2 h gratis. Confirma en la señal o el automat.',
+    ].filter(Boolean).join('. ');
+    return { ...base, level, status: name, nowText, detail };
   }
 
   // --- Copenhague ---
@@ -251,11 +375,10 @@ function evaluateZone(feature, opts = {}) {
 }
 
 // Próximo instante en que SE EMPIEZA a cobrar (para mensajes de "gratis ahora").
-function nextPaidTime(muni, from) {
+function nextPaidTime(muni, from, navn) {
   for (let i = 0; i < 24 * 8; i++) {
     const t = new Date(from.getTime() + i * HOUR);
-    const paid = muni === 'frb' ? frbIsPaidHour(t) : true;
-    if (paid) return t;
+    if (isPaidAt(muni, navn, t)) return t;
   }
   return null;
 }
@@ -266,6 +389,8 @@ function isFreeNow(feature, when = new Date()) {
   const muni = p.municipality || 'cph';
   const core = (p.kategori || '').replace(/^Kommende\s*/i, '').replace(/^Tidligere\s*/i, '');
   if (muni === 'frb') return !frbIsPaidHour(when);
+  if (muni === 'aar') return AAR_TARIFFS[p.navn] ? !aarIsPaidHour(when, p.navn) : false;
+  if (muni === 'vejle') return !vejlePaidNow(p.periode, when);
   if (/Uden for betalingszone/i.test(core)) return true;
   if (core === 'Betalingszone') return cphFirstHourFree(when);
   return false; // residentes / restricción no son "gratis para cualquiera"
@@ -274,6 +399,7 @@ function isFreeNow(feature, when = new Date()) {
 // Clasificación para el filtro de UX.
 function zoneClass(feature) {
   const p = feature.properties || {};
+  if (p.municipality === 'vejle') return /beboer|zonekort/i.test(p.note || '') ? 'license' : 'pay';
   const core = (p.kategori || '').replace(/^Kommende\s*/i, '').replace(/^Tidligere\s*/i, '');
   if (core === 'Betalingszone') return 'pay';
   if (core === 'Beboerzone' || core === 'Adressebeboerzone' || core === 'Flexzone') return 'license';

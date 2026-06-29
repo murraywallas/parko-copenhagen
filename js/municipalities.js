@@ -32,6 +32,30 @@ const MUNICIPALITIES = [
     ruleEngine: 'frb',
     attribution: 'Datos: Frederiksberg Kommune · Open Data DK',
   },
+  {
+    id: 'aar',
+    name: 'Aarhus',
+    label: 'Aarhus',
+    center: [56.1518, 10.2034],
+    zoom: 14,
+    liveUrl: null,
+    fallbackUrl: 'data/zones-aarhus.json',
+    facilitiesUrl: 'data/facilities-aarhus.json',
+    ruleEngine: 'aar',
+    attribution: 'Datos: Aarhus Kommune · Open Data DK',
+  },
+  {
+    id: 'vejle',
+    name: 'Vejle',
+    label: 'Vejle',
+    center: [55.7090, 9.5357],
+    zoom: 15,
+    liveUrl: null,
+    fallbackUrl: 'data/zones-vejle.json',
+    facilitiesUrl: 'data/facilities-vejle.json',
+    ruleEngine: 'vejle',
+    attribution: 'Datos: Vejle Kommune · Open Data DK',
+  },
 ];
 
 // --- Punto en polígono (ray casting), soporta Polygon y MultiPolygon ---

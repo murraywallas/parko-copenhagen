@@ -24,9 +24,10 @@ const STRIP_ZOOM = 15;        // a partir de aquí se muestran las calles
 // ---------------------------------------------------- Colores
 function zoneColor(props) {
   if (props.municipality === 'frb') return '#d6457d';
+  if (props.municipality === 'vejle') return /beboer|zonekort/i.test(props.note || '') ? '#8c5bd6' : '#2f8fb0';
   const k = props.kategori || '';
   if (k === 'Betalingszone') return ({
-    'Rød': '#e4572e', 'Grøn': '#2e9e5b', 'Blå': '#3a78d6', 'Gul': '#d6a700',
+    'Rød': '#e4572e', 'Grøn': '#2e9e5b', 'Blå': '#3a78d6', 'Gul': '#d6a700', 'Orange': '#e8821e',
   })[props.navn] || '#9aa0a6';
   const core = k.replace(/^Kommende\s*/i, '').replace(/^Tidligere\s*/i, '');
   if (core === 'Beboerzone' || core === 'Adressebeboerzone') return '#8c5bd6';
@@ -143,11 +144,14 @@ async function loadZones() {
   features = results.flatMap(r => r.feats);
   const live = results.some(r => r.live);
   renderZones();
-  setStatus(`${features.length} zonas · CPH + Frederiksberg · ${live ? 'en vivo' : 'offline'}`);
+  setStatus(`${features.length} zonas · Copenhague · Aarhus · Vejle`);
 }
 async function loadFacilities() {
-  try { const r = await fetch('data/parking-facilities.json'); facilities = (await r.json()).features || []; }
-  catch (_) { facilities = []; }
+  // CPH (con garajes oficiales) + parkings OSM de cada otra ciudad.
+  const urls = ['data/parking-facilities.json',
+    ...MUNICIPALITIES.map(m => m.facilitiesUrl).filter(Boolean)];
+  const all = await Promise.all(urls.map(u => fetch(u).then(r => r.json()).then(j => j.features || []).catch(() => [])));
+  facilities = all.flat();
   renderFacilities();
 }
 
@@ -191,6 +195,7 @@ function renderFacilities() {
   const z = map.getZoom();
   if (z < 14) return;
   const showAll = z >= 15;
+  const b = map.getBounds().pad(0.3); // solo lo visible (hay miles, multi-ciudad)
   facLayer = L.layerGroup();
   for (const f of facilities) {
     const c = f.properties.cls;
@@ -198,6 +203,7 @@ function renderFacilities() {
     if (!(garage || c === 'pay' || c === 'free' || showAll)) continue;
     if (!facVisibleByFilter(c)) continue;
     const [lo, la] = f.geometry.coordinates;
+    if (!b.contains([la, lo])) continue;
     // Garajes oficiales (p_hus): marcador cuadrado "P" para distinguirlos.
     const m = garage
       ? L.marker([la, lo], { icon: garageIcon() })
@@ -222,9 +228,11 @@ function renderMeters() {
   if (meterLayer) { meterLayer.remove(); meterLayer = null; }
   if (!facOn || !map || map.getZoom() < METER_ZOOM) return;
   if (!(activeFilter === 'all' || activeFilter === 'pay')) return;
+  const mb = map.getBounds().pad(0.3);
   meterLayer = L.layerGroup();
   for (const m of meters) {
     const [lo, la] = m.geometry.coordinates;
+    if (!mb.contains([la, lo])) continue;
     const mk = L.circleMarker([la, lo], {
       renderer: canvasRenderer, radius: 4,
       color: m.properties.broken ? '#e4572e' : '#f0a500', weight: 2, fillColor: '#1b1f24', fillOpacity: 1,
@@ -608,14 +616,14 @@ function locateMe() {
 
 // ---------------------------------------------------- Búsqueda por dirección (DAWA)
 const DAWA = 'https://api.dataforsyningen.dk/adgangsadresser/autocomplete';
-const DAWA_KOMMUNER = '0101|0147'; // København + Frederiksberg
+const DAWA_KOMMUNER = '0101|0147|0751|0630'; // København, Frederiksberg, Aarhus, Vejle
 
 async function searchAddress(q) {
   if (!q.trim()) return;
   setStatus('Buscando dirección…');
   try {
     const d = await (await fetch(`${DAWA}?q=${encodeURIComponent(q)}&per_side=1&srid=4326&kommunekode=${DAWA_KOMMUNER}`)).json();
-    setStatus(`${features.length} zonas · CPH + Frederiksberg`);
+    setStatus(`${features.length} zonas · Copenhague · Aarhus · Vejle`);
     if (!d.length) { setStatus('Dirección no encontrada'); return; }
     goToAddress(d[0].adgangsadresse.y, d[0].adgangsadresse.x, d[0].tekst);
   } catch (_) { setStatus('Error en la búsqueda'); }
@@ -717,6 +725,18 @@ function initFacToggle() {
   btn.classList.toggle('on', facOn);
   btn.addEventListener('click', () => { facOn = !facOn; btn.classList.toggle('on', facOn); renderFacilities(); renderMeters(); });
 }
+function flyToCity(id) {
+  const m = MUNICIPALITIES.find(x => x.id === id); if (!m) return;
+  map.setView(m.center, m.zoom);
+  document.getElementById('sheet').classList.remove('open');
+  setStatus(`${m.label} · acerca el mapa para ver calles y plazas`);
+}
+function initCities() {
+  document.querySelectorAll('.city[data-city]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.city').forEach(x => x.classList.remove('on'));
+    b.classList.add('on'); flyToCity(b.dataset.city);
+  }));
+}
 
 function init() {
   map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([55.6761, 12.5683], 13);
@@ -727,17 +747,16 @@ function init() {
   stripsRenderer = L.svg({ padding: 0.5, pane: 'stripsPane' });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
     maxZoom: 20, subdomains: 'abcd',
-    attribution: '© OpenStreetMap © CARTO · Data: KK + Frederiksberg / Open Data DK · Parkings: OSM',
+    attribution: '© OpenStreetMap © CARTO · Datos: Open Data DK (KK, Frederiksberg, Aarhus, Vejle) · Parkings: OSM',
   }).addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   map.on('click', e => showAt(e.latlng.lat, e.latlng.lng));
-  map.on('zoomend', () => { renderFacilities(); renderMeters(); });
-  map.on('moveend', loadStrips);
+  map.on('moveend', () => { loadStrips(); renderFacilities(); renderMeters(); });
 
   document.getElementById('locate-btn').addEventListener('click', locateMe);
   document.getElementById('sheet-close').addEventListener('click', closeSheet);
 
-  initDateTime(); initFilters(); initSearch(); initFacToggle();
+  initDateTime(); initFilters(); initSearch(); initFacToggle(); initCities();
   loadZones(); loadFacilities(); loadMeters();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
